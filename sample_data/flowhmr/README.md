@@ -19,9 +19,10 @@ non-commercial use.
 1. Run FlowHMR normally to obtain its NPZ containing poses (T,52,3), trans (T,3)
    and betas (1,16). Record the actual frame rate. No frame-rate conversion,
    grounding, camera adjustment or pose correction is performed by this exporter.
-2. From the FlowHMR checkout, using its Python environment, run:
+2. Using the FlowHMR Python environment, run the exporter with its checkout
+   explicitly selected (no editable package installation or PYTHONPATH required):
 
-   `python /path/to/UMR/scripts/export_flowhmr_surface.py motion.npz surface.npz --model assets/body_models/smplh/neutral/model.npz --fps 30`
+   `python /path/to/UMR/scripts/export_flowhmr_surface.py motion.npz surface.npz --flowhmr-root /path/to/FlowHMR --model /path/to/FlowHMR/assets/body_models/smplh/neutral/model.npz --fps 30`
 
    Replace 30 with the actual frame rate. The model must be the same neutral
    SMPL-H model resolved by FlowHMR. The exporter checks dimensions and finite
@@ -59,29 +60,47 @@ motion formats separately. A UMR qpos archive is not automatically a robot
 policy-training CSV. Longer representative motion validation and independent
 review remain necessary before calling this integration production-ready.
 
-### Recorded compatibility checks
+### Latest-code validation (2026-11-11 UTC)
 
-The implementation was exercised against UMR base
-`d1cdaedaf67a827198da71c5fa831f48b2e51f91` and local FlowHMR
-`b0d00759fff918ed8b1ae85847a6dc46c9e54e4d`. These are tested revisions,
-not a claim that either repository's latest remote revision was checked.
-The tested FlowHMR checkout carries research/non-profit terms; this test is not
-commercial clearance or a statement about the license of another revision.
+This adapter targets FlowHMR `df15cadf56e738bf80c42c93d5e73687ff1002d2`,
+verified as upstream main on the date above. Its repository code LICENSE is
+Apache-2.0. Separate pretrained weights, SMPL-H model assets and input/output
+data terms still require review for the intended use.
 
-A 207-frame historical reconstruction was re-exported and retargeted with its
-existing trained correspondence slots. Template geometry, joints, faces and
-anatomical labels matched; motion vertex differences were at most 2.39e-7 metres.
-Compared with the prior retarget result, root-position RMSE was 1.41e-8 metres,
-joint RMSE 7.92e-8 radians, and maximum joint difference 8.35e-7 radians. All
-207 output frames were finite. This checks adapter compatibility for one case;
-it does not establish newly trained correspondence quality, all-motion parity,
-commercial licensing, or safe hardware execution. Test assets remain external.
+Validation used a hash-verified snapshot of the actual latest source, not only
+a comparison of individual FK files. All 223 available source/document blobs
+matched upstream; one documentation PNG was unavailable and not needed to run.
+The latest `save_fbx` serializer was executed with network-shaped synthetic
+output and produced the expected NPZ schema. The exporter was then executed
+from a different working directory with `--flowhmr-root`, without PYTHONPATH or
+an editable FlowHMR installation.
 
-### Current upstream check
+A 207-frame existing reconstruction was processed through the latest FlowHMR
+SMPL-H forward models and the UMR adapter using its existing trained
+correspondence slots. Compared with the historical retarget result, root-position
+RMSE was 1.41e-8 metres, joint RMSE 7.92e-8 radians, and maximum joint difference
+8.35e-7 radians. All output frames were finite. UMR base was
+`d1cdaedaf67a827198da71c5fa831f48b2e51f91`, also verified as upstream main.
 
-At review, upstream UMR main remained `d1cdaedaf67a827198da71c5fa831f48b2e51f91`.
-FlowHMR main was `df15cadf56e738bf80c42c93d5e73687ff1002d2`, whose
-repository LICENSE is Apache-2.0. Its body-model implementation
-`smpl_skeleton.py` is byte-identical to the implementation used for the checks
-above. This source-level check is not an end-to-end run of the latest inference
-model, and does not change separate weights, SMPL-H assets or data terms.
+This validates the latest-code serialization/FK-to-retarget interface. It does
+not represent a fresh video-to-motion model inference run, validate optional
+RGBMocap postprocessing, retrain correspondence for all motions, establish
+commercial clearance, or certify hardware safety. Test assets remain external.
+
+### Current FlowHMR input workflow
+
+Follow the current upstream installation instructions and run, from FlowHMR:
+
+`python run_v2m_demo_generation.py video.mp4`
+
+Current outputs are `output/<video stem>/<checkpoint stem>.npz`; nonzero seeds
+append `_seed<N>`. Use the actual generated NPZ, not an assumed filename. The
+current serializer writes poses `(T,52,3)`, betas `(1,16)`, trans `(T,3)` and
+`mocap_framerate=30`. Its output already includes FlowHMR's world-orientation
+conversion; do not apply that conversion again before the surface exporter.
+Verify the selected file's frame rate rather than relying on video FPS.
+
+`--postprocess` is optional and currently uses RGBMocap contact planning and
+anatomical IK. It changes generated motion and has separate dependencies; the
+adapter does not enable or reproduce it. Record whether it was enabled when
+comparing motion results.

@@ -93,5 +93,17 @@ class IntegrationContracts(unittest.TestCase):
         parents[22] = 22
         with self.assertRaises(ValueError): vertex_parts(weights, parents)
 
+class CheckoutTests(unittest.TestCase):
+    def test_explicit_checkout_root_is_resolved_without_pythonpath(self):
+        from export_flowhmr_surface import resolve_flowhmr_root
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module = root / 'flowhmr/core/bodymodels/smpl_skeleton.py'
+            module.parent.mkdir(parents=True)
+            module.write_text('')
+            self.assertEqual(resolve_flowhmr_root(root), root.resolve())
+            with self.assertRaises(ValueError):
+                resolve_flowhmr_root(root / 'missing')
+
 if __name__ == '__main__':
     unittest.main()

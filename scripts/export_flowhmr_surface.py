@@ -3,6 +3,7 @@
 from __future__ import annotations
 import argparse
 import hashlib
+import sys
 from pathlib import Path
 import numpy as np
 import smplh_surface_source as surface
@@ -29,6 +30,13 @@ def vertex_parts(weights, parents):
     return groups.argmax(1).astype(np.int32)
 
 
+def resolve_flowhmr_root(path):
+    root = Path(path).resolve()
+    if not (root / "flowhmr" / "core" / "bodymodels" / "smpl_skeleton.py").is_file():
+        raise ValueError(f"Not a FlowHMR source checkout: {root}")
+    return root
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', type=Path, help='FlowHMR NPZ: poses, trans, betas')
@@ -36,11 +44,14 @@ def main():
     parser.add_argument('--model', type=Path, required=True, help='Licensed neutral SMPL-H model.npz used by FlowHMR')
     parser.add_argument('--fps', type=float, required=True, help='Actual input frame rate; no resampling')
     parser.add_argument('--batch-size', type=int, default=32)
+    parser.add_argument('--flowhmr-root', type=Path, default=Path.cwd(),
+                        help='FlowHMR source checkout; defaults to current directory')
     args = parser.parse_args()
     if args.output.exists():
         parser.error('Output already exists')
     if args.batch_size < 1 or not np.isfinite(args.fps) or args.fps <= 0:
         parser.error('fps and batch-size must be positive')
+    sys.path.insert(0, str(resolve_flowhmr_root(args.flowhmr_root)))
     import torch
     from flowhmr.core.bodymodels.smpl_skeleton import SMPLMesh, SMPLSkeleton
     with np.load(args.input, allow_pickle=False) as data:

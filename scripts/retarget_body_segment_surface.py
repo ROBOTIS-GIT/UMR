@@ -1254,6 +1254,7 @@ def bind_source_slots_with_normals(
     source_model_type="smplx",
     source_joint_names=None,
     source_template_joints=None,
+    source_vertex_part_ids=None,
 ):
     binding = bind_points_to_mesh(slot_points, template_vertices, template_faces, nearest_vertex_k=nearest_vertex_k)
     out = np.empty((len(motion_vertices), len(slot_points), 3), dtype=np.float32)
@@ -1271,7 +1272,13 @@ def bind_source_slots_with_normals(
         f"[{log_prefix}] bound {label} slots: slots={len(slot_points)}, "
         f"error_mean={float(binding['errors'].mean()):.5f}, p95={float(np.percentile(binding['errors'], 95)):.5f}"
     )
-    if str(source_model_type).lower() == "soma":
+    if source_vertex_part_ids is not None:
+        labels = np.asarray(source_vertex_part_ids)[bound_faces]
+        votes = np.zeros((len(labels), 20), dtype=np.float64)
+        for corner in range(3):
+            votes[np.arange(len(labels)), labels[:, corner]] += binding["bary"][:, corner]
+        slot_part_ids = relabel_upper_arm_slots(votes.argmax(axis=1), binding["closest_points"], log_prefix=log_prefix)
+    elif str(source_model_type).lower() == "soma":
         try:
             slot_part_ids = soma_slot_part_ids_from_smplx_correspondence(
                 template_faces,

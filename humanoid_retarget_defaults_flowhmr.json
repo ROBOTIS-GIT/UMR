@@ -1,0 +1,17 @@
+{
+  "smpl_template": {
+    "source": "motion",
+    "type": "smplh",
+    "name": "auto",
+    "use_betas": true
+  },
+  "motion": {
+    "data": "./sample_data/flowhmr/surface.npz",
+    "seq_key": "",
+    "seq_index": 0
+  },
+  "retarget": {
+    "zero_source_finger_pose": false
+  },
+  "extends": "humanoid_retarget_defaults.json"
+}

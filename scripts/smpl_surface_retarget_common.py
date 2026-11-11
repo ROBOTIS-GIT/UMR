@@ -33,6 +33,7 @@ if str(ROOT) not in sys.path:
 from view_smpl_mujoco import dynamic_surface_template_to_world, model_faces  # noqa: E402
 import soma_source  # noqa: E402
 import nr_source  # noqa: E402
+import smplh_surface_source
 import triangle_projection
 from smplx_model_loader import build_smplx_model as load_smplx_model  # noqa: E402
 
@@ -172,6 +173,11 @@ def load_flat_smplx_sequence(path: Path):
     }
 
 
+def load_surface_or_smplx_motion(path):
+    sequence = smplh_surface_source.load(path)
+    return sequence if sequence is not None else load_smplx_npz_motion(path)
+
+
 def load_motion_collection(path: Path):
     path = Path(path)
     if path.is_dir():
@@ -185,12 +191,12 @@ def load_motion_collection(path: Path):
             raise FileNotFoundError(f"No .npz or .bvh motion files found in {path}.")
         motions = {}
         for file in files:
-            sequence = load_soma_bvh_motion(file) if file.suffix.lower() == ".bvh" else load_smplx_npz_motion(file)
+            sequence = load_soma_bvh_motion(file) if file.suffix.lower() == ".bvh" else load_surface_or_smplx_motion(file)
             motions[file.stem] = sequence
             motions[file.name] = sequence
         return motions, "motion_dir"
     if path.suffix.lower() == ".npz":
-        return {path.stem: load_smplx_npz_motion(path)}, "smplx_npz"
+        return {path.stem: load_surface_or_smplx_motion(path)}, "smplx_npz"
     if path.suffix.lower() == ".bvh":
         return {path.stem: load_soma_bvh_motion(path)}, "soma_bvh"
     return load_compressed_motion_pickle(path), "compressed_smpl_joblib"
@@ -224,6 +230,8 @@ def slice_frames(num_frames, start, end, stride, max_frames):
 
 
 def sequence_frame_count(sequence):
+    if smplh_surface_source.is_sequence(sequence):
+        return len(sequence["vertices"])
     if is_nr_sequence(sequence):
         return nr_source.sequence_frame_count(sequence)
     return soma_source.sequence_frame_count(sequence)
@@ -238,6 +246,8 @@ def is_nr_sequence(sequence) -> bool:
 
 
 def source_model_type(sequence, template_cfg=None) -> str:
+    if smplh_surface_source.is_sequence(sequence):
+        return "smplh"
     if template_cfg is not None and str(template_cfg.get("type", "")).lower() == "nr_fbx":
         return "nr_fbx"
     if is_nr_sequence(sequence):
@@ -341,7 +351,7 @@ def center_smplx_template(vertices, joints, center_mode):
 
 def center_source_template(vertices, joints, center_mode, joint_names=None, source_type="smplx"):
     source_type = str(source_type).lower()
-    if source_type == "smplx":
+    if source_type in {"smplx", "smplh"}:
         return center_smplx_template(vertices, joints, center_mode)
     vertices = np.asarray(vertices, dtype=np.float32).copy()
     joints = np.asarray(joints, dtype=np.float32).copy()
@@ -612,6 +622,10 @@ def source_motion_vertices_joints(
     smplx_batch_size_max=10000,
     smplx_batch_size_safety_factor=0.8,
 ):
+    if smplh_surface_source.is_sequence(sequence):
+        if zero_source_finger_pose:
+            raise ValueError("Cached surfaces cannot change finger poses; re-export the motion")
+        return sequence["vertices"][frame_ids], sequence["joints"][frame_ids], sequence["faces"]
     if is_nr_sequence(sequence):
         return nr_source.motion_vertices_joints(sequence, frame_ids)
     if is_soma_sequence(sequence):
@@ -636,6 +650,9 @@ def source_motion_vertices_joints(
 
 def source_template_vertices_joints_faces(sequence, template_cfg, smplx_model_dir, soma_usd_path=None):
     source_type = source_model_type(sequence, template_cfg)
+    if smplh_surface_source.is_sequence(sequence):
+        return (sequence["template_vertices"].copy(), sequence["template_joints"].copy(),
+                sequence["faces"].copy(), None, "smplh")
     if source_type == "nr_fbx":
         vertices, joints, faces, joint_names = nr_source.template_vertices_joints_faces(sequence)
         return vertices, joints, faces, joint_names, source_type

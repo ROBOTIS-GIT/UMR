@@ -21,6 +21,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from humanoid_retarget_config import list_of_args, load_config, resolve_path, robot_config, section  # noqa: E402
+import smplh_surface_source
 import soma_source  # noqa: E402
 
 
@@ -346,6 +347,8 @@ def slots_out(config: dict[str, Any]) -> Path:
 
 
 def retarget_source_type(config: dict[str, Any], sequence) -> str:
+    if smplh_surface_source.is_sequence(sequence):
+        return "smplh"
     template_type = str(section(config, "smpl_template").get("type", "smplx")).lower()
     source_format = "" if sequence is None else str(sequence.get("source_format", "")).lower()
     if template_type == "soma" or source_format.startswith("soma"):
@@ -606,12 +609,21 @@ def _motion_sequence_for_template(config: dict[str, Any]):
     data_path = resolve_path(motion.get("data"), config)
     if data_path is None or not data_path.exists():
         return "", None
+    if data_path.suffix.lower() == ".npz":
+        surface = smplh_surface_source.load(data_path, template_only=True)
+        if surface is not None:
+            return common.select_sequence({data_path.stem: surface}, motion.get("seq_key", ""), int(motion.get("seq_index", 0)))
     data, _source_format = common.load_motion_collection(data_path)
     return common.select_sequence(data, motion.get("seq_key", ""), int(motion.get("seq_index", 0)))
 
 
 def smpl_template_config(config: dict[str, Any]) -> dict[str, Any]:
     template = dict(config.get("smpl_template", {}) or {})
+    cached_key, cached_sequence = "", None
+    if bool_value(template.get("use_betas"), True) and str(template.get("source", "motion")) == "motion":
+        cached_key, cached_sequence = _motion_sequence_for_template(config)
+    if smplh_surface_source.is_sequence(cached_sequence):
+        return smplh_surface_source.template_config(cached_sequence, template)
     source = str(template.get("source", "motion"))
     use_betas = bool_value(template.get("use_betas"), True)
     use_gender = bool_value(template.get("use_gender"), True)
@@ -622,7 +634,7 @@ def smpl_template_config(config: dict[str, Any]) -> dict[str, Any]:
     sequence = None
 
     if use_betas and source == "motion":
-        seq_key, sequence = _motion_sequence_for_template(config)
+        seq_key, sequence = cached_key, cached_sequence
         if sequence is not None:
             if str(sequence.get("source_format", "")).startswith("soma"):
                 model_type = "soma"
@@ -734,7 +746,18 @@ def build_correspondence_dataset(config: dict[str, Any], force=False, dry_run=Fa
             if template_cfg["type"] == "soma" and not use_soma_sequence_template(template_sequence, template_cfg):
                 template_sequence = None
     specs = smpl_model_specs(config)
-    if template_cfg["betas"] is not None:
+    cached_sequence = None
+    if (template_cfg["type"] == "smplh" and template_cfg["source"] == "motion"
+            and bool_value(section(config, "smpl_template").get("use_betas"), True)):
+        _, cached_sequence = _motion_sequence_for_template(config)
+        if smplh_surface_source.is_sequence(cached_sequence):
+            smplh_surface_source.template_config(cached_sequence, section(config, "smpl_template"))
+    if smplh_surface_source.is_sequence(cached_sequence):
+        samples.append(smplh_surface_source.build_sample(
+            cached_sequence, build, template_cfg["name"], num_points, seed + 1000,
+            oversample_ratio, curvature_weight, curvature_power, smpl_center, bbox_center_ratio))
+        specs = []
+    elif template_cfg["betas"] is not None:
         specs = [
             {
                 "type": template_cfg["type"],

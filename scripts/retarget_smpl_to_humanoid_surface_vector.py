@@ -295,6 +295,8 @@ def smpl_template_default_name(model_type, gender, betas):
 
 
 def smpl_template_config(config, sequence=None, seq_key="", default_gender="neutral"):
+    if common.smplh_surface_source.is_sequence(sequence):
+        return common.smplh_surface_source.template_config(sequence, config.get("smpl_template", {}))
     template = dict(config.get("smpl_template", {}) or {})
     source = str(template.get("source", "motion"))
     use_betas = bool_config(template.get("use_betas"), True)
@@ -2148,7 +2150,7 @@ def main():
         soma_usd_path=soma_usd_path,
     )
     source_up = str(sequence.get("output_up", "z"))
-    is_uniform_source = source_model_type not in {"smplx", "soma"}
+    is_uniform_source = source_model_type not in {"smplx", "smplh", "soma"}
     vertices_world = None
     joints_world = None
     ground_z = 0.0
@@ -2303,6 +2305,7 @@ def main():
             source_model_type=source_model_type,
             source_joint_names=source_joint_names,
             source_template_joints=template_joints_centered,
+            source_vertex_part_ids=sequence.get("vertex_part_ids"),
         )
         if composite_racket_enabled:
             source_tpose_path = resolve_path(composite_racket_cfg.get("source_tpose_npz"), args.config_data)

@@ -33,6 +33,7 @@ if str(ROOT) not in sys.path:
 from view_smpl_mujoco import dynamic_surface_template_to_world, model_faces  # noqa: E402
 import soma_source  # noqa: E402
 import nr_source  # noqa: E402
+import triangle_projection
 from smplx_model_loader import build_smplx_model as load_smplx_model  # noqa: E402
 
 
@@ -739,7 +740,8 @@ def bind_points_to_mesh(points, vertices, faces, nearest_vertex_k=24):
         candidate_faces = np.fromiter(candidate_faces, dtype=np.int32)
         triangles = vertices[faces[candidate_faces]]
         query = np.repeat(point[None, :], len(triangles), axis=0)
-        closest = trimesh.triangles.closest_point(triangles, query)
+        closest = triangle_projection.finite_closest_points(
+            triangles, query, trimesh.triangles.closest_point)
         dist2 = np.sum((closest - point[None, :]) ** 2, axis=1)
         best = int(np.argmin(dist2))
         face_id = int(candidate_faces[best])
@@ -771,7 +773,7 @@ def barycentric_coordinates(point, triangle):
     d21 = float(np.dot(v2, v1))
     denom = d00 * d11 - d01 * d01
     if abs(denom) < 1e-12:
-        return np.asarray([1.0, 0.0, 0.0], dtype=np.float32)
+        return triangle_projection.project(point, triangle)[1].astype(np.float32)
     vv = (d11 * d20 - d01 * d21) / denom
     ww = (d00 * d21 - d01 * d20) / denom
     uu = 1.0 - vv - ww

@@ -303,6 +303,8 @@ def smpl_template_default_name(model_type, gender, betas):
 
 
 def smpl_template_config(config, sequence=None, seq_key="", default_gender="neutral"):
+    if common.smplh_surface_source.is_sequence(sequence):
+        return common.smplh_surface_source.template_config(sequence, config.get("smpl_template", {}))
     template = dict(config.get("smpl_template", {}) or {})
     source = str(template.get("source", "motion"))
     use_betas = bool_config(template.get("use_betas"), True)
@@ -1871,7 +1873,8 @@ def main(argv=None):
         )
         suffix = f" Available sample_data motion files: {available}" if available else ""
         raise FileNotFoundError(f"Motion data not found: {args.data}.{suffix}")
-    data, source_format = common.load_motion_collection(args.data)
+    data, source_format = common.load_motion_collection(
+        args.data, smplh_model_path=resolve_path(args.config_data.get("smplh_model_path"), args.config_data))
     seq_key, sequence = common.select_sequence(data, args.seq_key, args.seq_index)
     total_frames = common.sequence_frame_count(sequence)
     frame_ids = common.slice_frames(total_frames, args.start, args.end, args.stride, args.max_frames)
@@ -1947,6 +1950,7 @@ def main(argv=None):
         source_model_type=source_model_type,
         source_joint_names=source_joint_names,
         source_template_joints=template_joints_centered,
+        source_vertex_part_ids=sequence.get("vertex_part_ids"),
     )
 
     segment_groups = body_segment_slot_groups(source_slot_part_ids)
@@ -2510,6 +2514,7 @@ def main(argv=None):
         "zero_source_finger_pose": np.asarray([bool(args.zero_source_finger_pose)]),
     }
     np.savez_compressed(args.out, **output_payload)
+    full_retarget.export_k1_csv(args.robot_name, model, qpos_seq, args.out, fps)
     print(
         f"[HumanoidRetarget] saved {args.out} qpos={qpos_seq.shape} "
         f"cost mean={float(costs.mean()):.6f} max={float(costs.max()):.6f}"

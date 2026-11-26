@@ -14,6 +14,7 @@ class PipelineTests(unittest.TestCase):
     def test_example_defaults_and_template_identity(self):
         import humanoid_retarget_pipeline as pipeline
         import retarget_smpl_to_humanoid_surface_vector as retarget
+        import retarget_smpl_to_humanoid_surface_vector_batch as batch
         import smplh_surface_source as source
         config = pipeline.load_pipeline_config(ROOT / 'robot_configs/humanoid_retarget_robotis_ai_sapiens_k1_example.json', ROOT / 'humanoid_retarget_defaults_flowhmr.json')
         with tempfile.TemporaryDirectory() as directory:
@@ -29,7 +30,11 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(config['motion']['seq_key'], '')
             self.assertIs(config['retarget']['zero_source_finger_pose'], False)
             self.assertEqual(pipeline.smpl_template_config(config), retarget.smpl_template_config(config, sequence))
+            self.assertEqual(pipeline.smpl_template_config(config), batch.smpl_template_config(config, sequence))
             self.assertEqual(pipeline.retarget_source_type(config, sequence), 'smplh')
+            self.assertTrue(pipeline.retarget_out(config).name.endswith('_umr_qpos.npz'))
+            config['retarget']['out'] = str(Path(directory) / 'chosen_umr_qpos.npz')
+            self.assertEqual(pipeline.retarget_out(config), Path(directory) / 'chosen_umr_qpos.npz')
 
     def test_legacy_manual_and_shape_disabled_do_not_read_motion(self):
         from unittest.mock import patch

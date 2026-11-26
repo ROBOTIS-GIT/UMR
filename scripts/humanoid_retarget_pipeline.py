@@ -199,6 +199,7 @@ def _absolutize_merged_config_paths(
 ) -> None:
     path_fields = (
         ("smplx_model_dir",),
+        ("smplh_model_path",),
         ("soma_usd_path",),
         ("smpl_template", "soma_usd_path"),
         ("motion", "data"),
@@ -375,7 +376,8 @@ def retarget_out(config: dict[str, Any]) -> Path:
     robot = robot_config(config)
     sequence_name, source_type = retarget_sequence_name(config)
     robot_name = safe_cache_component(str(robot["name"]))
-    default = ROOT / "output" / f"{robot_name}_retarget" / f"{sequence_name}_{source_type}_{robot_name}.npz"
+    suffix = "_umr_qpos" if robot["name"] == "robotis_ai_sapiens_k1" else ""
+    default = ROOT / "output" / f"{robot_name}_retarget" / f"{sequence_name}_{source_type}_{robot_name}{suffix}.npz"
     return resolve_path(retarget.get("out"), config, default)
 
 
@@ -610,10 +612,12 @@ def _motion_sequence_for_template(config: dict[str, Any]):
     if data_path is None or not data_path.exists():
         return "", None
     if data_path.suffix.lower() == ".npz":
-        surface = smplh_surface_source.load(data_path, template_only=True)
+        surface = smplh_surface_source.load(
+            data_path, template_only=True, model_path=resolve_path(config.get("smplh_model_path"), config))
         if surface is not None:
             return common.select_sequence({data_path.stem: surface}, motion.get("seq_key", ""), int(motion.get("seq_index", 0)))
-    data, _source_format = common.load_motion_collection(data_path)
+    data, _source_format = common.load_motion_collection(
+        data_path, smplh_model_path=resolve_path(config.get("smplh_model_path"), config))
     return common.select_sequence(data, motion.get("seq_key", ""), int(motion.get("seq_index", 0)))
 
 

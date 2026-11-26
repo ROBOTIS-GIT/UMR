@@ -36,6 +36,7 @@ if str(SCRIPTS) not in sys.path:
 
 import smpl_surface_retarget_common as common  # noqa: E402
 import shared_smplx_correspondence  # noqa: E402
+from k1_csv_export import export_k1_csv  # noqa: E402
 from humanoid_retarget_config import load_config, resolve_path, robot_config, section  # noqa: E402
 from mujoco_geom_surface import geom_local_mesh, surface_geom_ids  # noqa: E402
 from mujoco_point_cloud_center import point_cloud_center_frame  # noqa: E402
@@ -2129,7 +2130,8 @@ def main():
         )
         suffix = f" Available sample_data motion files: {available}" if available else ""
         raise FileNotFoundError(f"Motion data not found: {args.data}.{suffix}")
-    data, source_format = common.load_motion_collection(args.data)
+    data, source_format = common.load_motion_collection(
+        args.data, smplh_model_path=resolve_path(args.config_data.get("smplh_model_path"), args.config_data))
     seq_key, sequence = common.select_sequence(data, args.seq_key, args.seq_index)
     total_frames = common.sequence_frame_count(sequence)
     frame_ids = common.slice_frames(total_frames, args.start, args.end, args.stride, args.max_frames)
@@ -2873,6 +2875,7 @@ def main():
         "zero_source_finger_pose": np.asarray([bool(args.zero_source_finger_pose)]),
     }
     np.savez_compressed(args.out, **output_payload)
+    export_k1_csv(args.robot_name, model, qpos_seq, args.out, fps)
     print(
         f"[HumanoidRetarget] saved {args.out} qpos={qpos_seq.shape} "
         f"cost mean={float(costs.mean()):.6f} max={float(costs.max()):.6f}"

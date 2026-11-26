@@ -1,4 +1,4 @@
-"""Pickle-free native SMPL-H surface interchange (metres, Y-up).
+"""SMPL-H parameter and cached-surface input adapter (metres, Y-up).
 
 Users supply licensed model assets separately. No SMPL-H assets are distributed
 with this adapter. Cached surfaces retain their original 16 shape coefficients.
@@ -15,10 +15,14 @@ def is_sequence(sequence):
     return sequence is not None and sequence.get("source_format") == FORMAT
 
 
-def load(path, *, template_only=False):
-    """Return None for other NPZ formats; fail closed for malformed declared data."""
+def load(path, *, template_only=False, model_path=None):
+    """Read native parameters or cached surfaces; return None for other formats."""
     with np.load(Path(path), allow_pickle=False) as archive:
-        if "source_format" not in archive or str(archive["source_format"].item()) != FORMAT:
+        if "source_format" not in archive:
+            if "poses" in archive and archive["poses"].shape[1:] == (52, 3):
+                return load_parameters(path, model_path=model_path, template_only=template_only)
+            return None
+        if str(archive["source_format"].item()) != FORMAT:
             return None
         required = ("vertices", "joints", "template_vertices", "template_joints",
                     "faces", "vertex_part_ids", "betas", "fps")
@@ -91,3 +95,74 @@ def template_config(sequence, options=None):
         raise ValueError("Cached SMPL-H surfaces require source=motion and use_betas=true; re-export to change shape")
     return {"name": template_name(sequence), "type": "smplh",
             "gender": "neutral", "betas": None, "source": "motion"}
+
+
+def vertex_parts(weights, parents):
+    """Map native SMPL-H skinning weights onto UMR's anatomical segment IDs."""
+    parts = np.array([15,14,2,7,5,11,7,6,8,7,6,8,4,16,17,4,3,9,12,13,10,1])
+    if weights.ndim != 2 or weights.shape[1] != 52 or parents.shape != (52,):
+        raise ValueError('Expected 52-joint native SMPL-H skinning data')
+    if not np.isfinite(weights).all() or (weights < 0).any() or not np.allclose(weights.sum(1), 1, atol=2e-5):
+        raise ValueError('Invalid SMPL-H skinning weights')
+    groups = np.zeros((len(weights), 20), dtype=np.float32)
+    for joint in range(52):
+        ancestor, visited = joint, set()
+        while ancestor >= 22:
+            if ancestor in visited or ancestor >= 52:
+                raise ValueError('Invalid or cyclic SMPL-H hierarchy')
+            visited.add(ancestor)
+            ancestor = int(parents[ancestor])
+        if ancestor < 0:
+            raise ValueError('Finger joint has no anatomical ancestor')
+        groups[:, parts[ancestor]] += weights[:, joint]
+    return groups.argmax(1).astype(np.int32)
+
+
+def load_parameters(path, *, model_path=None, fps=None, template_only=False, batch_size=32):
+    """Evaluate FlowHMR's absolute SMPL-H parameters without an intermediate file.
+
+    No hand means, pose correctives or coordinate conversion are added. Both the
+    direct loader and optional surface exporter use this evaluation path.
+    """
+    import torch
+    from smplh_surface_model import SMPLHSurfaceModel
+
+    path = Path(path)
+    with np.load(path, allow_pickle=False) as archive:
+        poses, trans, betas = (np.array(archive[key], dtype=np.float32) for key in ('poses', 'trans', 'betas'))
+        if fps is None:
+            if 'mocap_framerate' not in archive:
+                raise ValueError('SMPL-H parameters require mocap_framerate; or use the surface exporter with --fps')
+            fps = float(archive['mocap_framerate'].item())
+    if (poses.ndim != 3 or poses.shape[1:] != (52, 3) or len(poses) == 0
+            or trans.shape != (len(poses), 3) or betas.shape not in {(16,), (1, 16)}):
+        raise ValueError('Expected poses (T,52,3), trans (T,3), and betas (16,) or (1,16)')
+    if not all(np.isfinite(value).all() for value in (poses, trans, betas)):
+        raise ValueError('Non-finite SMPL-H input')
+    if not np.isfinite(fps) or fps <= 0 or batch_size < 1:
+        raise ValueError('fps and batch-size must be positive')
+    model_path = Path(model_path) if model_path is not None else Path(__file__).resolve().parents[1] / 'smplh/neutral/model.npz'
+    model = SMPLHSurfaceModel(model_path)
+    shape = torch.from_numpy(betas.reshape(1, 16))
+    data = {}
+    with torch.no_grad():
+        if not template_only:
+            vertices, joints = [], []
+            for start in range(0, len(poses), batch_size):
+                batch_vertices, batch_joints = model(
+                    torch.from_numpy(poses[start:start + batch_size]), shape,
+                    torch.from_numpy(trans[start:start + batch_size]),
+                )
+                vertices.append(batch_vertices.numpy())
+                joints.append(batch_joints.numpy())
+            data.update(vertices=np.concatenate(vertices), joints=np.concatenate(joints))
+        template_vertices, template_joints = model(torch.zeros(1, 52, 3), shape, torch.zeros(1, 3))
+    data.update(
+        source_format=FORMAT, gender='neutral', output_up='y', fps=float(fps),
+        template_vertices=template_vertices[0].numpy(), template_joints=template_joints[0].numpy(),
+        faces=model.faces, vertex_part_ids=vertex_parts(model.weights.numpy(), model.parents.numpy()),
+        betas=betas.reshape(16),
+        input_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        model_sha256=hashlib.sha256(model_path.read_bytes()).hexdigest(),
+    )
+    return data

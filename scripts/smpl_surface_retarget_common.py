@@ -173,12 +173,12 @@ def load_flat_smplx_sequence(path: Path):
     }
 
 
-def load_surface_or_smplx_motion(path):
-    sequence = smplh_surface_source.load(path)
+def load_surface_or_smplx_motion(path, smplh_model_path=None):
+    sequence = smplh_surface_source.load(path, model_path=smplh_model_path)
     return sequence if sequence is not None else load_smplx_npz_motion(path)
 
 
-def load_motion_collection(path: Path):
+def load_motion_collection(path: Path, *, smplh_model_path=None):
     path = Path(path)
     if path.is_dir():
         if nr_source.is_nr_root(path):
@@ -191,12 +191,12 @@ def load_motion_collection(path: Path):
             raise FileNotFoundError(f"No .npz or .bvh motion files found in {path}.")
         motions = {}
         for file in files:
-            sequence = load_soma_bvh_motion(file) if file.suffix.lower() == ".bvh" else load_surface_or_smplx_motion(file)
+            sequence = load_soma_bvh_motion(file) if file.suffix.lower() == ".bvh" else load_surface_or_smplx_motion(file, smplh_model_path)
             motions[file.stem] = sequence
             motions[file.name] = sequence
         return motions, "motion_dir"
     if path.suffix.lower() == ".npz":
-        return {path.stem: load_surface_or_smplx_motion(path)}, "smplx_npz"
+        return {path.stem: load_surface_or_smplx_motion(path, smplh_model_path)}, "smplx_npz"
     if path.suffix.lower() == ".bvh":
         return {path.stem: load_soma_bvh_motion(path)}, "soma_bvh"
     return load_compressed_motion_pickle(path), "compressed_smpl_joblib"

@@ -86,24 +86,12 @@ class IntegrationContracts(unittest.TestCase):
                           {'np': np, 'Y_UP_TO_Z_UP_MATRIX': matrix})
         np.testing.assert_array_equal(fn([[0,1,0]], 'smplh', 'y'), [[0,0,1]])
     def test_skinning_labels_and_cycle_rejection(self):
-        from export_flowhmr_surface import vertex_parts
+        from smplh_surface_source import vertex_parts
         weights = np.zeros((2,52)); weights[0,20]=1; weights[1,22]=1
         parents = np.zeros(52, dtype=int); parents[22] = 20
         np.testing.assert_array_equal(vertex_parts(weights, parents), [10,10])
         parents[22] = 22
         with self.assertRaises(ValueError): vertex_parts(weights, parents)
-
-class CheckoutTests(unittest.TestCase):
-    def test_explicit_checkout_root_is_resolved_without_pythonpath(self):
-        from export_flowhmr_surface import resolve_flowhmr_root
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            module = root / 'flowhmr/core/bodymodels/smpl_skeleton.py'
-            module.parent.mkdir(parents=True)
-            module.write_text('')
-            self.assertEqual(resolve_flowhmr_root(root), root.resolve())
-            with self.assertRaises(ValueError):
-                resolve_flowhmr_root(root / 'missing')
 
 if __name__ == '__main__':
     unittest.main()
